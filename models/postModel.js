@@ -18,7 +18,7 @@ const postSchema = mongoose.Schema(
             type: String,   
             required: [true, 'Please enter a description'],
         },
-        category: {
+        tags: {
             type:[String]
         }
     },
