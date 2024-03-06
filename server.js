@@ -74,6 +74,7 @@ const extractUserMiddleware = (req, res, next) => {
             name: user.name,
             username: user.username,
             email: user.email,
+            role_id: user.role_id
             // Add other user details as needed
         });
     } catch (error) {
@@ -85,8 +86,9 @@ const extractUserMiddleware = (req, res, next) => {
 
 
     app.post('/signup', async (req, res) => {
+        console.log(req.body)
     try {
-        const { name, username, email, password } = req.body;
+        const { name, username, email, password, role_id } = req.body;
 
         // Check if the user already exists
         const existingUser = await User.findOne({ email });
@@ -103,6 +105,7 @@ const extractUserMiddleware = (req, res, next) => {
             username,
             email,
             password: hashedPassword,
+            role_id,
         });
 
         // Generate a token for the user
@@ -225,6 +228,10 @@ app.post('/savepost', upload.single('image'), async (req, res) => {
     }
 });
 
+//delete a post
+
+
+
 app.post('/savecomments', async (req, res) => {
 
     try {
@@ -260,6 +267,28 @@ app.get('/posts/:id', async (req, res) => {
     }
 });
 
+app.delete('/deletepost/:id', async (req, res) => {
+    const postId = req.params.id;
+
+    try {
+        // Check if the post exists
+        const post = await Posts.findById(postId);
+
+        if (!post) {
+            return res.status(404).json({ message: 'Post not found' });
+        }
+
+        // Delete the post
+        await Posts.findByIdAndDelete(postId);
+
+        // Optionally, delete associated images or perform other cleanup tasks
+
+        res.status(200).json({ message: 'Post deleted successfully' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.message });
+    }
+});
 app.get('/user-posts/:userId', async (req, res) => {
     const userId = req.params.userId;
 
