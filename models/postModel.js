@@ -20,6 +20,9 @@ const postSchema = mongoose.Schema(
         },
         tags: {
             type:[String]
+        },
+        thumbs: {
+            type: String
         }
     },
 

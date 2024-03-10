@@ -10,11 +10,25 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('./models/UserModel');
 const cors = require('cors');
+const path = require('path')
 
 
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, "./uploads")
+    },
+    filename: (req, file, cb) => {
+        console.log(file)
+        cb(null, Date.now() + path.extname(file.originalname))
+    }
+})
+
+const upload = multer({storage})
 
 const app = express();
 const port = 3000;
+// app.use(express.json({ limit: '50mb' }));
+// app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
 const corsOptions = {
     origin: 'http://localhost:3000',
@@ -25,16 +39,6 @@ app.use(express.json());
 const secretKey = crypto.randomBytes(32).toString('hex');
 
 
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads'); // specify the local folder where you want to store images
-    },
-    filename: function (req, file, cb) {
-        cb(null, file.originalname);
-    },
-});
-
-const upload = multer({ storage: storage });
 app.get('/', (req, res) => {
     res.send('Use endpoint to access the api ');
 });
@@ -121,18 +125,25 @@ const extractUserMiddleware = (req, res, next) => {
 });
 
 // Login endpoint
-    app.post('/login', async (req, res) => {
+app.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { username, email, password } = req.body;
 
-        // Check if the user exists
-        const user = await User.findOne({ email });
+        // Check if either email or username is provided
+        if (!(email || username)) {
+            return res.status(400).json({ message: 'Email or username is required' });
+        }
+
+        // Find the user based on email, if provided; otherwise, use username
+        const user = await User.findOne({ email }) || await User.findOne({ username });
+
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
         // Compare the provided password with the hashed password in the database
         const isPasswordValid = await bcrypt.compare(password, user.password);
+
         if (!isPasswordValid) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -144,9 +155,10 @@ const extractUserMiddleware = (req, res, next) => {
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.message });
-
     }
 });
+
+
 
     app.post('/logout', async (req, res) => {
     try {
@@ -161,11 +173,33 @@ const extractUserMiddleware = (req, res, next) => {
     }
 })
 
-    app.get('/posts', async (req, res) => {
-
+app.get('/posts', async (req, res) => {
     try {
-        const post = await Posts.find({});
-        res.status(200).json(post);
+        // Get the page number and items per page from query parameters
+        const page = parseInt(req.query.page) || 1;
+        const perPage = parseInt(req.query.perPage) || 5; // Set a default value for items per page
+
+        // Calculate the skip value based on the page number and items per page
+        const skip = (page - 1) * perPage;
+
+        // Fetch total number of posts
+        const totalPosts = await Posts.countDocuments({});
+
+        // Fetch posts with pagination
+        const posts = await Posts.find({}).sort({ createdAt: -1 }).skip(skip).limit(perPage);
+
+        // Calculate total number of pages
+        const totalPages = Math.ceil(totalPosts / perPage);
+
+        res.status(200).json({
+            posts,
+            pageInfo: {
+                totalPosts,
+                totalPages,
+                currentPage: page,
+                lastPage: totalPages,
+            }
+        });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.message });
@@ -199,10 +233,12 @@ const extractUserMiddleware = (req, res, next) => {
         res.status(500).json({ message: error.message });
     }
 });
-app.post('/savepost', upload.single('image'), async (req, res) => {
+
+
+app.post('/savepost', upload.single('file'), async (req, res) => {
 
     try {
-        const { userId, userName, title, description, tags } = req.body;
+        const { userId, userName, title, description, tags, thumbs } = req.body;
 
         const post = await Posts.create({
             userId,
@@ -210,16 +246,10 @@ app.post('/savepost', upload.single('image'), async (req, res) => {
             title,
             description,
             tags,
-            imageUrl: req.file ? req.file.path : null
+            thumbs
         });
 
-        if (req.file) {
-            console.log(req.file)
-            await Image.create({
-                filename: req.file.originalname,
-                path: req.file.path,
-            });
-        }
+       
 
         res.status(200).json(post);
     } catch (error) {
