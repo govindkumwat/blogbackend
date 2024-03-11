@@ -27,8 +27,8 @@ const upload = multer({storage})
 
 const app = express();
 const port = 3000;
-// app.use(express.json({ limit: '50mb' }));
-// app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
 const corsOptions = {
     origin: 'http://localhost:3000',
@@ -90,7 +90,6 @@ const extractUserMiddleware = (req, res, next) => {
 
 
     app.post('/signup', async (req, res) => {
-        console.log(req.body)
     try {
         const { name, username, email, password, role_id } = req.body;
 
@@ -175,18 +174,36 @@ app.post('/login', async (req, res) => {
 
 app.get('/posts', async (req, res) => {
     try {
-        // Get the page number and items per page from query parameters
+        // Get the page number, items per page, search query, and tags from query parameters
         const page = parseInt(req.query.page) || 1;
-        const perPage = parseInt(req.query.perPage) || 5; // Set a default value for items per page
+        const perPage = parseInt(req.query.perPage) || 5;
+        const searchQuery = req.query.search || '';
+        const tagsQuery = req.query.tags || '';
+
+        // Create regular expressions for case-insensitive search
+        const searchRegex = new RegExp(searchQuery, 'i');
+        const tagsRegex = new RegExp(tagsQuery, 'i');
 
         // Calculate the skip value based on the page number and items per page
         const skip = (page - 1) * perPage;
 
-        // Fetch total number of posts
-        const totalPosts = await Posts.countDocuments({});
+        // Build the query object based on both search and tags criteria
+        const query = {
+            $or: [
+                { title: searchRegex },
+                { content: searchRegex }
+            ],
+            tags: tagsRegex !== undefined ? tagsRegex : '' // Include tags in the search criteria
+        };
 
-        // Fetch posts with pagination
-        const posts = await Posts.find({}).sort({ createdAt: -1 }).skip(skip).limit(perPage);
+        // Fetch total number of posts with the combined criteria
+        const totalPosts = await Posts.countDocuments(query);
+
+        // Fetch posts with pagination and combined search criteria
+        const posts = await Posts.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(perPage);
 
         // Calculate total number of pages
         const totalPages = Math.ceil(totalPosts / perPage);
@@ -198,13 +215,16 @@ app.get('/posts', async (req, res) => {
                 totalPages,
                 currentPage: page,
                 lastPage: totalPages,
-            }
+                TaggedSearch : tagsRegex || ''
+            },
         });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.message });
     }
 });
+
+
 
     app.get('/getcomments', async (req, res) => {
 
@@ -249,17 +269,12 @@ app.post('/savepost', upload.single('file'), async (req, res) => {
             thumbs
         });
 
-       
-
         res.status(200).json(post);
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.message });
     }
 });
-
-//delete a post
-
 
 
 app.post('/savecomments', async (req, res) => {
