@@ -258,8 +258,42 @@ app.post('/savepost', upload.single('file'), async (req, res) => {
     }
 });
 
-//delete a post
+//update post by id
+app.put('/updatepost/:id', async (req, res) => {
+    const postId = req.params.id;
+    const { title, description, tags, thumbs } = req.body;
 
+    try {
+        const post = await Posts.update(postId, {
+            title,
+            description,
+            tags,
+            thumbs
+        }, { new: true }); // <-- Add { new: true } to return the updated document
+        
+        if (!post) return res.status(404).json({ message: 'Post not found' });
+
+        res.status(200).json(post);
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+
+
+
+
+
+app.get('/toppost', async (req, res) => {
+    try {
+        const posts = await Posts.find({}).sort({ thumbs: -1 }).limit(5);
+        res.status(200).json(posts);
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.message });
+    }
+})
 
 
 app.post('/savecomments', async (req, res) => {
@@ -296,6 +330,8 @@ app.get('/posts/:id', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+
+
 
 app.delete('/deletepost/:id', async (req, res) => {
     const postId = req.params.id;
