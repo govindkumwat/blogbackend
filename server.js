@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const User = require('./models/UserModel');
 const cors = require('cors');
 const path = require('path')
+const postView = require('./models/setPostViewModel')
 
 
 const storage = multer.diskStorage({
@@ -41,6 +42,11 @@ const secretKey = crypto.randomBytes(32).toString('hex');
 
 app.get('/', (req, res) => {
     res.send('Use endpoint to access the api ');
+});
+
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).send('Something broke!');
 });
 
 
@@ -172,6 +178,7 @@ app.post('/login', async (req, res) => {
     }
 })
 
+
 app.get('/posts', async (req, res) => {
     try {
         // Get the page number, items per page, search query, and tags from query parameters
@@ -200,10 +207,16 @@ app.get('/posts', async (req, res) => {
         const totalPosts = await Posts.countDocuments(query);
 
         // Fetch posts with pagination and combined search criteria
-        const posts = await Posts.find(query)
+        let posts = await Posts.find(query)
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(perPage);
+
+        // Fetch post views for each post and add to the posts array
+        posts = await Promise.all(posts.map(async (post) => {
+            const PostView = await postView.findOne({ postId: post._id });
+            return { ...post.toObject(), postView: PostView ? PostView.totalPageView : 0 };
+        }));
 
         // Calculate total number of pages
         const totalPages = Math.ceil(totalPosts / perPage);
@@ -224,6 +237,78 @@ app.get('/posts', async (req, res) => {
     }
 });
 
+//Get top post by view 
+
+app.get('/toppost', async (req, res) => {
+    try {
+        const topPosts = await Posts.aggregate([
+            {
+                $lookup: {
+                    from: 'postviews',
+                    localField: '_id',
+                    foreignField: 'postId',
+                    as: 'postViews'
+                }
+            },
+            {
+                $addFields: {
+                    postViewCount: { $sum: '$postViews.totalPageView' }
+                }
+            },
+            {
+                $sort: { postViewCount: -1 }
+            },
+            {
+                $limit: 5
+            },
+            {
+                $project: {
+                    _id: 1,
+                    title: 1,
+                    content: 1,
+                    tags: 1,
+                    postViewCount: 1
+                }
+            }
+        ]);
+
+        console.log('Top Posts:', topPosts); // Log the retrieved top posts
+
+        res.status(200).json({
+            topPosts
+        });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+
+
+
+
+app.put('/setPostView', async (req, res) => {
+    const { postId, totalPageView } = req.body;
+    try {
+        let existingPostView = await postView.findOne({ postId });
+        if (existingPostView) {
+            // Update existing record
+            existingPostView.totalPageView = totalPageView;
+            await existingPostView.save();
+            res.status(200).json(existingPostView);
+        } else {
+            // Create new record
+            const newPostView = await postView.create({
+                postId,
+                totalPageView
+            });
+            res.status(200).json(newPostView);
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 
     app.get('/getcomments', async (req, res) => {
@@ -255,6 +340,9 @@ app.get('/posts', async (req, res) => {
 });
 
 
+
+
+
 app.post('/savepost', upload.single('file'), async (req, res) => {
 
     try {
@@ -276,46 +364,6 @@ app.post('/savepost', upload.single('file'), async (req, res) => {
     }
 });
 
-<<<<<<< HEAD
-//update post by id
-app.put('/updatepost/:id', async (req, res) => {
-    const postId = req.params.id;
-    const { title, description, tags, thumbs } = req.body;
-
-    try {
-        const post = await Posts.update(postId, {
-            title,
-            description,
-            tags,
-            thumbs
-        }, { new: true }); // <-- Add { new: true } to return the updated document
-        
-        if (!post) return res.status(404).json({ message: 'Post not found' });
-
-        res.status(200).json(post);
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ message: error.message });
-    }
-});
-
-
-
-
-
-
-app.get('/toppost', async (req, res) => {
-    try {
-        const posts = await Posts.find({}).sort({ thumbs: -1 }).limit(5);
-        res.status(200).json(posts);
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ message: error.message });
-    }
-})
-
-=======
->>>>>>> 838e612ecf41bf3c721673402523eee911dd713b
 
 app.post('/savecomments', async (req, res) => {
 
@@ -335,6 +383,8 @@ app.post('/savecomments', async (req, res) => {
     }
 });
 
+
+
 app.get('/posts/:id', async (req, res) => {
     const postId = req.params.id;
 
@@ -345,12 +395,25 @@ app.get('/posts/:id', async (req, res) => {
             return res.status(404).json({ message: 'Post not found' });
         }
 
-        res.status(200).json(post);
+        // Fetch post views for the specified post ID
+        const PostView = await postView.findOne({ postId });
+
+        // Create a new object combining post details and post view count
+        const postDetails = {
+            ...post.toObject(),
+            postView: PostView ? PostView.totalPageView : 0
+        };
+
+        res.status(200).json(postDetails);
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.message });
     }
 });
+
+
+//save total post view in pageView Table
+
 
 
 
