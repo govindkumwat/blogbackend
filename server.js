@@ -12,6 +12,7 @@ const User = require('./models/UserModel');
 const cors = require('cors');
 const path = require('path')
 const postView = require('./models/setPostViewModel')
+const nodemailer = require('nodemailer');
 
 
 const storage = multer.diskStorage({
@@ -32,7 +33,8 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
 const corsOptions = {
-    origin: 'http://localhost:3000',
+    credentials: true,
+    origin: ['http://localhost:3001', 'http://192.168.103.141:3001'],
     optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
 app.use(cors(corsOptions));
@@ -453,6 +455,78 @@ app.get('/user-posts/:userId', async (req, res) => {
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: error.message });
+    }
+});
+
+router.post('/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Generate reset token
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        const resetTokenExpiration = Date.now() + 3600000; // 1 hour expiration
+
+        // Update user record with reset token and expiration time
+        user.resetPasswordToken = resetToken;
+        user.resetPasswordExpires = resetTokenExpiration;
+        await user.save();
+
+        // Send email with reset password link
+        const transporter = nodemailer.createTransport({
+            // Configure your email provider here
+        });
+
+        const mailOptions = {
+            from: 'your@email.com',
+            to: email,
+            subject: 'Password Reset',
+            text: `You are receiving this email because you (or someone else) has requested the reset of the password for your account.\n\n
+            Please click on the following link, or paste this into your browser to complete the process:\n\n
+            http://${req.headers.host}/reset-password/${resetToken}\n\n
+            If you did not request this, please ignore this email and your password will remain unchanged.\n`
+        };
+
+        transporter.sendMail(mailOptions, (error) => {
+            if (error) {
+                console.error('Error sending email:', error);
+                return res.status(500).json({ message: 'Failed to send reset email' });
+            }
+            res.status(200).json({ message: 'Reset email sent successfully' });
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// Reset Password Endpoint
+router.post('/reset-password/:token', async (req, res) => {
+    const { token } = req.params;
+    const { newPassword } = req.body;
+    try {
+        const user = await User.findOne({
+            resetPasswordToken: token,
+            resetPasswordExpires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid or expired token' });
+        }
+
+        // Update user's password and clear reset token fields
+        user.password = newPassword;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+        await user.save();
+
+        res.status(200).json({ message: 'Password reset successful' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
